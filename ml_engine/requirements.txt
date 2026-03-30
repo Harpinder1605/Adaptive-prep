@@ -1,1 +1,3 @@
-google-generativeaipsycopg2-binarypython-dotenv
+google-generativeai
+psycopg2-binary
+python-dotenv
