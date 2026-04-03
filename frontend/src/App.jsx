@@ -45,23 +45,31 @@ function App() {
       return;
     }
     try {
-      const res = await fetch(`${API_BASE}/users`, {
+      // Split logic based on whether the user is on the Login or Signup screen
+      const endpoint = authMode === 'login' ? '/users/login' : '/users/signup';
+      
+      const res = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: usernameInput, password: passwordInput })
       });
       const data = await res.json();
-      if (!res.ok) return setLoginError(data.error || 'Login failed');
+      
+      if (!res.ok) return setLoginError(data.error || 'Authentication failed');
+      
       setUser(data);
-      fetchTopics();
+      fetchTopics(data.id); // Pass ID directly to load their specific topics
     } catch (err) {
       setLoginError('Could not connect to the server.');
     }
   };
 
-  const fetchTopics = async () => {
+  const fetchTopics = async (activeUserId) => {
     try {
-      const res = await fetch(`${API_BASE}/topics`);
+      const currentId = activeUserId || user?.id;
+      if (!currentId) return;
+      
+      const res = await fetch(`${API_BASE}/topics?userId=${currentId}`);
       const data = await res.json();
       setTopics(data);
     } catch (err) {
@@ -70,12 +78,12 @@ function App() {
   };
 
   const handleCreateTopic = async () => {
-    if (!newTopicInput.trim()) return;
+    if (!newTopicInput.trim() || !user) return;
     try {
       const res = await fetch(`${API_BASE}/topics`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newTopicInput })
+        body: JSON.stringify({ name: newTopicInput, userId: user.id }) // Send user ID to backend
       });
       const data = await res.json();
       setTopics([data, ...topics]);
