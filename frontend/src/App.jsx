@@ -93,6 +93,22 @@ function App() {
     }
   };
 
+  const handleDeleteTopic = async (topicId, e) => {
+    e.stopPropagation(); // Prevent the topic card click (startQuiz) from firing
+    if (!window.confirm('Are you sure you want to delete this topic and all its questions?')) return;
+    
+    try {
+      const res = await fetch(`${API_BASE}/topics/${topicId}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        setTopics(topics.filter(t => t.id !== topicId)); // Remove from UI
+      }
+    } catch (err) {
+      console.error("Failed to delete topic:", err);
+    }
+  };
+
   const startQuiz = async (topic) => {
     setSelectedTopic(topic);
     try {
@@ -105,7 +121,7 @@ function App() {
         await fetch(`${API_BASE}/generate-initial`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ topic: topic.name })
+          body: JSON.stringify({ topic: topic.name, userId: user.id, topicId: topic.id }) // Smart fallback logic
         });
         
         // Fetch again after generation
@@ -284,9 +300,18 @@ function App() {
               <div 
                 key={topic.id} 
                 onClick={() => startQuiz(topic)}
-                className="bg-white p-6 rounded-xl shadow-sm cursor-pointer hover:shadow-md hover:border-blue-500 border-2 border-transparent transition"
+                className="bg-white p-6 rounded-xl shadow-sm cursor-pointer hover:shadow-md hover:border-blue-500 border-2 border-transparent transition relative group"
               >
-                <h3 className="text-lg font-bold text-gray-800">{topic.name}</h3>
+                <div className="flex justify-between items-start">
+                  <h3 className="text-lg font-bold text-gray-800">{topic.name}</h3>
+                  <button 
+                    onClick={(e) => handleDeleteTopic(topic.id, e)}
+                    className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Delete Topic"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                  </button>
+                </div>
                 <p className="text-sm text-gray-500 mt-2">Adaptive Learning Active</p>
               </div>
             ))}
@@ -314,7 +339,7 @@ function App() {
               <p className="text-blue-800 font-bold text-xl">AI is analyzing your performance...</p>
             </div>
           ) : aiReport && !aiReport.error ? (
-            <div className="bg-linear-to-br from-indigo-50 to-blue-50 p-6 rounded-xl text-left shadow-sm border border-indigo-100 mb-8">
+            <div className="bg-gradient-to-br from-indigo-50 to-blue-50 p-6 rounded-xl text-left shadow-sm border border-indigo-100 mb-8">
                <h3 className="text-xl font-bold text-indigo-900 mb-4 flex items-center gap-2">
                  <span className="text-2xl">📊</span> Your AI Tutor Report
                </h3>

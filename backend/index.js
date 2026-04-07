@@ -68,7 +68,7 @@ app.post('/api/users/signup', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     const newUser = await pool.query(
-      'INSERT INTO users (username, password) VALUES ($1, $2) RETURNING id, username',
+      'INSERT INTO users (username, password) VALUES ($1, $2) RETURNING id, username', // Don't return the password hash back to the frontend
       [username, hashedPassword]
     );
     res.json(newUser.rows[0]);
@@ -122,6 +122,23 @@ app.get('/api/topics', async (req, res) => {
   }
 });
 
+// Delete Topic
+app.delete('/api/topics/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Safely cascade delete in order: Attempts -> Questions -> Topic
+    await pool.query('DELETE FROM attempt_history WHERE question_id IN (SELECT id FROM questions WHERE topic_id = $1)', [id]);
+    await pool.query('DELETE FROM questions WHERE topic_id = $1', [id]);
+    await pool.query('DELETE FROM topics WHERE id = $1', [id]);
+    
+    res.json({ success: true, message: 'Topic deleted successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Server error');
+  }
+});
+
 // Questions (Filtered by unanswered)
 app.get('/api/questions/:topic_id', async (req, res) => {
   try {
@@ -158,12 +175,32 @@ app.post('/api/attempts', async (req, res) => {
   }
 });
 
-// Generate initial questions for a custom topic
-app.post('/api/generate-initial', (req, res) => {
-  const { topic } = req.body;
+// Generate initial questions for a custom topic (Smart Fallback)
+app.post('/api/generate-initial', async (req, res) => {
+  const { topic, userId, topicId } = req.body;
+  let difficulty = 1;
+
+  try {
+    if (userId && topicId) {
+      // Find the highest difficulty this specific user reached for this topic
+      const diffQuery = await pool.query(`
+        SELECT MAX(q.difficulty_level) as max_diff
+        FROM attempt_history a
+        JOIN questions q ON a.question_id = q.id
+        WHERE a.user_id = $1 AND q.topic_id = $2
+      `, [userId, topicId]);
+
+      if (diffQuery.rows[0].max_diff) {
+        difficulty = diffQuery.rows[0].max_diff; // Resume from their max level!
+      }
+    }
+  } catch (err) {
+    console.error("Error fetching max difficulty:", err);
+  }
+
   const mlEnginePath = path.join(__dirname, '../ml_engine');
   
-  exec(`python generate_questions.py "${topic}"`, { cwd: mlEnginePath }, (error, stdout, stderr) => {
+  exec(`python generate_questions.py "${topic}" ${difficulty}`, { cwd: mlEnginePath }, (error, stdout, stderr) => {
     if (error) {
       console.error("Python Error:", stderr);
       return res.status(500).json({ error: 'Failed to generate initial questions' });

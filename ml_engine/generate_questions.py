@@ -117,6 +117,7 @@ def save_questions_to_db(topic_name, questions):
 
 if __name__ == "__main__":
     target_topic = sys.argv[1] if len(sys.argv) > 1 else "Machine Learning Basics"
-    generated_data = generate_questions(topic_name=target_topic, num_questions=3, difficulty=1)
+    diff = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+    generated_data = generate_questions(topic_name=target_topic, num_questions=3, difficulty=diff)
     if generated_data:
         save_questions_to_db(topic_name=target_topic, questions=generated_data)
