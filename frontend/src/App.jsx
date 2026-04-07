@@ -28,7 +28,7 @@ function App() {
   const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   const API_BASE = isLocal 
     ? 'http://localhost:5000/api' 
-    : 'https://adaptive-prep-backend.onrender.com/api'; // <-- IMPORTANT: Replace this with your actual Render URL if it is different!
+    : 'https://adaptive-prep.onrender.com/api'; // <-- IMPORTANT: Replace this with your actual Render URL if it is different!
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -339,7 +339,7 @@ function App() {
               <p className="text-blue-800 font-bold text-xl">AI is analyzing your performance...</p>
             </div>
           ) : aiReport && !aiReport.error ? (
-            <div className="bg-gradient-to-br from-indigo-50 to-blue-50 p-6 rounded-xl text-left shadow-sm border border-indigo-100 mb-8">
+            <div className="bg-linear-to-br from-indigo-50 to-blue-50 p-6 rounded-xl text-left shadow-sm border border-indigo-100 mb-8">
                <h3 className="text-xl font-bold text-indigo-900 mb-4 flex items-center gap-2">
                  <span className="text-2xl">📊</span> Your AI Tutor Report
                </h3>
