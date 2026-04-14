@@ -3,121 +3,123 @@ import os
 import json
 import time
 import psycopg2
-import google.generativeai as genai
+from groq import Groq
 from dotenv import load_dotenv
 
-# 🔥 BULLETPROOF WINDOWS FIX: Force the terminal to accept emojis/special characters
+# Force UTF-8 for Windows compatibility
 if sys.stdout.encoding.lower() != 'utf-8':
     sys.stdout.reconfigure(encoding='utf-8')
 
 load_dotenv()
-api_key = os.getenv("GEMINI_API_KEY")
 
-if not api_key:
-    print("[ERROR] Could not find GEMINI_API_KEY.")
-else:
-    print("[SUCCESS] API Key successfully loaded.")
-
-genai.configure(api_key=api_key)
+# 1. Initialize the GROQ Client
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 def get_db_connection():
-    try:
-        return psycopg2.connect(os.getenv("DATABASE_URL"))
-    except Exception as e:
-        print(f"[ERROR] Error connecting to the database: {e}")
-        return None
-
-def get_valid_model():
-    try:
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods and ('flash' in m.name or 'pro' in m.name):
-                return m.name.replace('models/', '')
-        return 'gemini-pro'
-    except Exception:
-        return 'gemini-pro'
+    return psycopg2.connect(os.getenv("DATABASE_URL"))
 
 def generate_questions(topic_name, num_questions=3, difficulty=1):
-    print(f"\nGenerating {num_questions} questions for topic: '{topic_name}' (Difficulty: {difficulty})...")
-    
-    model_name = get_valid_model()
-    if not model_name: return None
-        
-    model = genai.GenerativeModel(model_name)
+    # Using Groq's lightning-fast LLaMA 3 model
+    model_id = 'llama-3.1-8b-instant' 
     
     prompt = f"""
-    You are an expert tutor. Generate {num_questions} multiple-choice questions about the topic '{topic_name}'.
-    The difficulty level is {difficulty} (where 1 is beginner, scaling upwards infinitely for advanced concepts).
-    
-    Return the response STRICTLY as a JSON array of objects. Do not include markdown formatting or backticks.
-    Each object must have the exact following keys:
-    - "question_text": The actual question.
-    - "options": An array of exactly 4 strings representing the choices.
-    - "correct_answer": A string that exactly matches one of the options.
-    - "difficulty_level": An integer representing the difficulty ({difficulty}).
-    - "explanation": A short 1-2 sentence explanation of why the correct answer is right.
+    Generate {num_questions} multiple-choice questions about '{topic_name}' at difficulty level {difficulty} (1=Beginner, 10=Expert).
+    Return ONLY a JSON object with a single key 'questions' containing an array of objects with this exact structure:
+    {{
+        "questions": [
+            {{
+                "question_text": "str",
+                "options": ["str", "str", "str", "str"],
+                "correct_answer": "str",
+                "explanation": "str"
+            }}
+        ]
+    }}
     """
     
-    # Rate Limit Protection (Auto-Retry)
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            response = model.generate_content(prompt)
-            raw_text = response.text.strip()
-            if raw_text.startswith('`' * 3 + 'json'):
-                raw_text = raw_text[7:-3].strip()
-            elif raw_text.startswith('`' * 3):
-                raw_text = raw_text[3:-3].strip()
-            return json.loads(raw_text)
-        except Exception as e:
-            if '429' in str(e) and attempt < max_retries - 1:
-                print(f"[WARNING] Rate limit hit. Retrying in 5 seconds...")
-                time.sleep(5)
-            else:
-                print(f"[ERROR] Failed to parse AI response. {e}")
-    return None
-
-def save_questions_to_db(topic_name, questions):
-    if not questions: return
-    conn = get_db_connection()
-    if not conn: return
-    cursor = conn.cursor()
+    # We still keep a small retry loop just in case of network blips
+    retries = [2, 5] 
     
-    try:
-        # AUTO-PATCH: Ensure the explanation column exists so it NEVER crashes!
-        cursor.execute("ALTER TABLE questions ADD COLUMN IF NOT EXISTS explanation TEXT;")
-        conn.commit()
-    except Exception:
-        conn.rollback()
+    for wait_time in [0] + retries:
+        try:
+            if wait_time > 0:
+                print(f"[INFO] Network delay. Waiting {wait_time} seconds before retrying...", file=sys.stderr)
+                time.sleep(wait_time)
+                
+            # GROQ SDK Syntax with Strict JSON format
+            response = client.chat.completions.create(
+                model=model_id,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"}
+            )
+            
+            raw_text = response.choices[0].message.content.strip()
+            
+            # Since Groq forces JSON, we can parse immediately
+            data = json.loads(raw_text)
+            
+            # Extract the array from the required JSON object wrapper
+            return data.get("questions", [])
+            
+        except Exception as e:
+            error_msg = str(e)
+            if 'rate limit' in error_msg.lower() and wait_time != retries[-1]:
+                continue 
+                
+            print(f"[AI ERROR] Failed to generate or parse questions: {e}", file=sys.stderr)
+            return []
+
+def save_questions_to_db(topic_name, questions, difficulty=1):
+    if not questions:
+        return
         
+    conn = get_db_connection()
+    cursor = conn.cursor()
     try:
+        # Get or create topic
         cursor.execute("SELECT id FROM topics WHERE name = %s", (topic_name,))
-        topic = cursor.fetchone()
-        
-        if topic:
-            topic_id = topic[0]
+        topic_row = cursor.fetchone()
+        if topic_row:
+            topic_id = topic_row[0]
         else:
-            cursor.execute("INSERT INTO topics (name, difficulty_weight) VALUES (%s, %s) RETURNING id", (topic_name, 1))
+            cursor.execute("INSERT INTO topics (name) VALUES (%s) RETURNING id", (topic_name,))
             topic_id = cursor.fetchone()[0]
-            
+
+        # Insert questions
         for q in questions:
-            options_json = json.dumps(q['options'])
             cursor.execute("""
-                INSERT INTO questions (topic_id, question_text, options, correct_answer, difficulty_level, explanation)
+                INSERT INTO questions (topic_id, difficulty_level, question_text, options, correct_answer, explanation)
                 VALUES (%s, %s, %s, %s, %s, %s)
-            """, (topic_id, q['question_text'], options_json, q['correct_answer'], q['difficulty_level'], q.get('explanation', '')))
-            
+            """, (
+                topic_id, 
+                difficulty, 
+                q['question_text'], 
+                json.dumps(q['options']), 
+                q['correct_answer'], 
+                q.get('explanation', '')
+            ))
         conn.commit()
         print(f"[SUCCESS] Saved {len(questions)} questions!")
     except Exception as e:
         print(f"[ERROR] Database transaction failed: {e}")
         conn.rollback()
+        sys.exit(1)
     finally:
         cursor.close()
         conn.close()
 
 if __name__ == "__main__":
     target_topic = sys.argv[1] if len(sys.argv) > 1 else "Machine Learning Basics"
-    diff = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+    
+    try:
+        diff = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+    except ValueError:
+        diff = 1
+        
     generated_data = generate_questions(topic_name=target_topic, num_questions=3, difficulty=diff)
+    
     if generated_data:
-        save_questions_to_db(topic_name=target_topic, questions=generated_data)
+        save_questions_to_db(topic_name=target_topic, questions=generated_data, difficulty=diff)
+    else:
+        print("[ERROR] No questions were generated.", file=sys.stderr)
+        sys.exit(1)

@@ -33,7 +33,7 @@ Frontend: React.js, Tailwind CSS, Vite.
 
 Backend: Node.js, Express.js.
 
-ML/AI Engine: Python 3, Google Gemini Pro API.
+ML/AI Engine: Python 3, Groq API (LLaMA 3).
 
 Database: PostgreSQL (Hosted on Neon).
 
@@ -49,13 +49,13 @@ Python 3.x
 
 PostgreSQL database (or a Neon.tech account)
 
-Google Gemini API Key
+Groq API Key
 
 2. Installation
 
 Clone the repository:
 
-git clone [https://github.com/yourusername/adaptive-prep.git](https://github.com/yourusername/adaptive-prep.git)
+git clone https://github.com/Harpinder1605/adaptive-prep.git
 cd adaptive-prep
 
 
@@ -63,15 +63,15 @@ cd adaptive-prep
 
 cd backend
 npm install
-# Create a .env file with DATABASE_URL and GEMINI_API_KEY
-node index.js
+# Create a .env file with DATABASE_URL and GROQ_API_KEY
+npm run dev
 
 
 4. ML Engine Setup
 
 cd ../ml_engine
 pip install -r requirements.txt
-# Create a .env file with DATABASE_URL and GEMINI_API_KEY
+# Create a .env file with DATABASE_URL and GROQ_API_KEY
 
 
 5. Frontend Setup

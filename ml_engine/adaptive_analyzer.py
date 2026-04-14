@@ -3,33 +3,31 @@ import os
 import json
 import time
 import psycopg2
-import google.generativeai as genai
+from groq import Groq
 from dotenv import load_dotenv
 
+# Force UTF-8 for Windows compatibility
 if sys.stdout.encoding.lower() != 'utf-8':
     sys.stdout.reconfigure(encoding='utf-8')
 
 from generate_questions import generate_questions, save_questions_to_db
 
 load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+# 1. Initialize the GROQ Client
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 def get_db_connection():
     return psycopg2.connect(os.getenv("DATABASE_URL"))
 
-def get_valid_model():
-    for m in genai.list_models():
-        if 'generateContent' in m.supported_generation_methods and ('flash' in m.name or 'pro' in m.name):
-            return m.name.replace('models/', '')
-    return 'gemini-pro'
-
-def fetch_user_history(username):
+def run_adaptive_loop(username):
+    # 1. Fetch History
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
         user_row = cursor.fetchone()
-        if not user_row: return None
+        if not user_row: return
         
         query = """
             SELECT t.name as topic_name, q.difficulty_level, a.is_correct, a.time_taken_seconds
@@ -37,61 +35,60 @@ def fetch_user_history(username):
             JOIN questions q ON a.question_id = q.id
             JOIN topics t ON q.topic_id = t.id
             WHERE a.user_id = %s
-            ORDER BY a.attempted_at DESC LIMIT 50;
+            ORDER BY a.attempted_at DESC LIMIT 20;
         """
         cursor.execute(query, (user_row[0],))
-        records = cursor.fetchall()
-        
-        if not records: return None
-        return [{"topic": r[0], "difficulty": r[1], "correct": r[2], "time_seconds": r[3]} for r in records]
+        history_data = [{"topic": r[0], "difficulty": r[1], "correct": r[2], "time_seconds": r[3]} for r in cursor.fetchall()]
     finally:
         cursor.close()
         conn.close()
 
-def run_adaptive_loop(username):
-    history_data = fetch_user_history(username)
     if not history_data: return
-        
-    model = genai.GenerativeModel('gemini-1.5-flash')
+
+    current_diff = history_data[0]['difficulty']
+    topic_name = history_data[0]['topic']
+
+    # 2. AI Analysis using GROQ
+    model_id = 'llama-3.1-8b-instant'
     prompt = f"""
-    You are an AI tutor. Student: {username}.
-    Raw data (latest attempts first): {json.dumps(history_data, indent=2)}
-    
-    Analyze performance based on Accuracy, Speed, and Topic trends.
-    Return STRICTLY as a JSON object:
-    - "analysis": A 2-sentence summary.
-    - "weak_points": Array of 1-2 weak areas.
-    - "recommended_next_step": Next study step.
-    - "adjust_difficulty": STRICTLY "INCREASE", "DECREASE", or "MAINTAIN".
+    Analyze student: {username}.
+    History: {json.dumps(history_data)}
+    Return ONLY a JSON object strictly in this format: {{"analysis": "str", "weak_points": ["str"], "recommended_next_step": "str", "adjust_difficulty": "INCREASE/DECREASE/MAINTAIN"}}
     """
     
-    # Rate Limit Protection (Auto-Retry)
-    max_retries = 3
-    analysis_json = None
+    # 🛡️ THE GRACEFUL FALLBACK
+    analysis_json = {
+        "analysis": "The AI Tutor is currently experiencing high traffic and could not generate a custom analysis.",
+        "weak_points": ["N/A"],
+        "recommended_next_step": "Keep practicing! We will maintain your current difficulty level for now.",
+        "adjust_difficulty": "MAINTAIN"
+    }
     
-    for attempt in range(max_retries):
+    retries = [2, 5] 
+    for wait_time in [0] + retries:
         try:
-            response = model.generate_content(prompt)
-            raw_text = response.text.strip()
-            if raw_text.startswith('`' * 3 + 'json'):
-                raw_text = raw_text[7:-3].strip()
-            elif raw_text.startswith('`' * 3):
-                raw_text = raw_text[3:-3].strip()
-                
+            if wait_time > 0: time.sleep(wait_time)
+            
+            # GROQ SDK Generation call
+            response = client.chat.completions.create(
+                model=model_id,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"}
+            )
+            
+            raw_text = response.choices[0].message.content.strip()
             analysis_json = json.loads(raw_text)
-            break
+            break 
         except Exception as e:
-            if '429' in str(e) and attempt < max_retries - 1:
-                time.sleep(5) # Wait 5 seconds to bypass the block
-            else:
-                print(f"Error: {e}")
-                return
-                
-    if not analysis_json:
-        return
+            error_msg = str(e)
+            if 'rate limit' in error_msg.lower() and wait_time != retries[-1]: 
+                continue 
+            
+            print(f"AI Error gracefully caught: {e}", file=sys.stderr)
+            break
 
+    # 3. Adjust Difficulty
     action = analysis_json.get('adjust_difficulty', 'MAINTAIN')
-    current_diff = history_data[0]['difficulty']
     new_diff = current_diff
     
     if action == 'INCREASE': 
@@ -99,16 +96,15 @@ def run_adaptive_loop(username):
     elif action == 'DECREASE' and current_diff > 1: 
         new_diff -= 1
     
-    topic_name = history_data[0]['topic']
-    
+    # 4. Generate next batch
     new_qs = generate_questions(topic_name, num_questions=3, difficulty=new_diff)
     if new_qs:
-        save_questions_to_db(topic_name, new_qs)
+        save_questions_to_db(topic_name, new_qs, difficulty=new_diff)
         
     final_report = {
-        "analysis": analysis_json.get('analysis'),
+        "analysis": analysis_json.get('analysis', "Keep up the good work!"),
         "weak_points": analysis_json.get('weak_points', []),
-        "recommended_next_step": analysis_json.get('recommended_next_step'),
+        "recommended_next_step": analysis_json.get('recommended_next_step', "Review and try again."),
         "adjust_difficulty": action,
         "new_difficulty": new_diff,
         "generated_new_questions": bool(new_qs)
@@ -119,5 +115,5 @@ def run_adaptive_loop(username):
     print("___JSON_END___")
 
 if __name__ == "__main__":
-    target_username = sys.argv[1] if len(sys.argv) > 1 else "test_user"
+    target_username = sys.argv[1] if len(sys.argv) > 1 else "hsbhu"
     run_adaptive_loop(target_username)
