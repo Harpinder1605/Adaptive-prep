@@ -17,18 +17,16 @@ function App() {
   const [quizFinished, setQuizFinished] = useState(false);
   const [startTime, setStartTime] = useState(null);
 
-  // New states for Features
   const [userAnswers, setUserAnswers] = useState([]);
   const [isGeneratingInitial, setIsGeneratingInitial] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiReport, setAiReport] = useState(null);
 
   // Automatically switch between local testing and your live deployed backend
-  // (Removed import.meta to fix the es2015 compilation warning)
   const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   const API_BASE = isLocal 
     ? 'http://localhost:5000/api' 
-    : 'https://adaptive-prep.onrender.com/api'; // <-- IMPORTANT: Replace this with your actual Render URL if it is different!
+    : 'https://adaptive-prep.onrender.com/api'; 
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -45,20 +43,16 @@ function App() {
       return;
     }
     try {
-      // Split logic based on whether the user is on the Login or Signup screen
       const endpoint = authMode === 'login' ? '/users/login' : '/users/signup';
-      
       const res = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: usernameInput, password: passwordInput })
       });
       const data = await res.json();
-      
       if (!res.ok) return setLoginError(data.error || 'Authentication failed');
-      
       setUser(data);
-      fetchTopics(data.id); // Pass ID directly to load their specific topics
+      fetchTopics(data.id);
     } catch (err) {
       setLoginError('Could not connect to the server.');
     }
@@ -68,7 +62,6 @@ function App() {
     try {
       const currentId = activeUserId || user?.id;
       if (!currentId) return;
-      
       const res = await fetch(`${API_BASE}/topics?userId=${currentId}`);
       const data = await res.json();
       setTopics(data);
@@ -83,7 +76,7 @@ function App() {
       const res = await fetch(`${API_BASE}/topics`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newTopicInput, userId: user.id }) // Send user ID to backend
+        body: JSON.stringify({ name: newTopicInput, userId: user.id })
       });
       const data = await res.json();
       setTopics([data, ...topics]);
@@ -94,16 +87,11 @@ function App() {
   };
 
   const handleDeleteTopic = async (topicId, e) => {
-    e.stopPropagation(); // Prevent the topic card click (startQuiz) from firing
-    if (!window.confirm('Are you sure you want to delete this topic and all its questions?')) return;
-    
+    e.stopPropagation();
+    if (!window.confirm('Are you sure you want to delete this topic?')) return;
     try {
-      const res = await fetch(`${API_BASE}/topics/${topicId}`, {
-        method: 'DELETE',
-      });
-      if (res.ok) {
-        setTopics(topics.filter(t => t.id !== topicId)); // Remove from UI
-      }
+      const res = await fetch(`${API_BASE}/topics/${topicId}`, { method: 'DELETE' });
+      if (res.ok) setTopics(topics.filter(t => t.id !== topicId));
     } catch (err) {
       console.error("Failed to delete topic:", err);
     }
@@ -115,25 +103,16 @@ function App() {
       const res = await fetch(`${API_BASE}/questions/${topic.id}?userId=${user.id}`);
       let data = await res.json();
       
-      // If no questions exist, trigger the generator automatically!
       if (data.length === 0) {
         setIsGeneratingInitial(true);
         await fetch(`${API_BASE}/generate-initial`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ topic: topic.name, userId: user.id, topicId: topic.id }) // Smart fallback logic
+          body: JSON.stringify({ topic: topic.name, userId: user.id, topicId: topic.id })
         });
-        
-        // Fetch again after generation
         const res2 = await fetch(`${API_BASE}/questions/${topic.id}?userId=${user.id}`);
         data = await res2.json();
         setIsGeneratingInitial(false);
-        
-        if (data.length === 0) {
-          alert("AI failed to generate questions. Please try again.");
-          resetDashboard();
-          return;
-        }
       }
 
       setQuestions(data);
@@ -159,7 +138,7 @@ function App() {
       const data = await res.json();
       setAiReport(data);
     } catch (err) {
-      setAiReport({ error: true, analysis: "Could not complete AI analysis at this time." });
+      setAiReport({ error: true, analysis: "AI analysis unavailable." });
     }
     setIsAnalyzing(false);
   };
@@ -170,21 +149,13 @@ function App() {
     const timeTaken = Math.round((Date.now() - startTime) / 1000);
 
     if (isCorrect) setScore(score + 1);
-
-    // Save answer for review
-    setUserAnswers(prev => [...prev, {
-      question: currentQuestion,
-      selected: selectedOption,
-      isCorrect: isCorrect
-    }]);
+    setUserAnswers(prev => [...prev, { question: currentQuestion, selected: selectedOption, isCorrect }]);
 
     try {
       await fetch(`${API_BASE}/attempts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: user.id, question_id: currentQuestion.id, is_correct: isCorrect, time_taken_seconds: timeTaken
-        })
+        body: JSON.stringify({ user_id: user.id, question_id: currentQuestion.id, is_correct: isCorrect, time_taken_seconds: timeTaken })
       });
     } catch (err) {}
 
@@ -202,24 +173,21 @@ function App() {
     setQuestions([]);
     setAiReport(null);
     setUserAnswers([]);
-    fetchTopics(); 
+    fetchTopics();
   };
 
-  // --- RENDER SCREENS ---
   if (!user) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
         <div className="flex flex-col items-center mb-8 text-center">
           <div className="bg-blue-600 p-4 rounded-full mb-4 shadow-lg">
-            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-            </svg>
+            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
           </div>
           <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight mb-2">Adaptive Prep</h1>
           <p className="text-lg text-gray-500 italic">"Master any subject, one adaptive step at a time."</p>
         </div>
 
-        {authMode === 'landing' && (
+        {authMode === 'landing' ? (
           <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
             <h2 className="text-2xl font-bold text-gray-800 mb-2">{getGreeting()}!</h2>
             <p className="text-gray-600 mb-8">Please log in or create an account to continue.</p>
@@ -228,18 +196,16 @@ function App() {
               <button onClick={() => setAuthMode('signup')} className="bg-white text-blue-600 border-2 border-blue-600 font-semibold py-3 rounded-lg hover:bg-blue-50 transition">Sign Up</button>
             </div>
           </div>
-        )}
-
-        {(authMode === 'login' || authMode === 'signup') && (
+        ) : (
           <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md relative">
-            <button onClick={() => { setAuthMode('landing'); setLoginError(''); }} className="absolute top-6 left-6 text-gray-400 hover:text-gray-600 transition">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+            <button onClick={() => setAuthMode('landing')} className="absolute top-6 left-6 text-gray-400 hover:text-gray-600 transition">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
             </button>
-            <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center mt-2">{authMode === 'login' ? 'Welcome Back' : 'Create an Account'}</h2>
+            <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center mt-2">{authMode === 'login' ? 'Welcome Back' : 'Create Account'}</h2>
             <form onSubmit={handleLogin} className="flex flex-col gap-4">
-              {loginError && <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-3 rounded text-sm mb-2"><p>{loginError}</p></div>}
-              <input type="text" placeholder="Enter your username..." value={usernameInput} onChange={(e) => setUsernameInput(e.target.value)} className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-              <input type="password" placeholder="Enter your password..." value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+              {loginError && <div className="bg-red-100 text-red-700 p-3 rounded text-sm mb-2">{loginError}</div>}
+              <input type="text" placeholder="Username" value={usernameInput} onChange={(e) => setUsernameInput(e.target.value)} className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"/>
+              <input type="password" placeholder="Password" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"/>
               <button type="submit" className="bg-blue-600 text-white font-semibold py-2 rounded-lg hover:bg-blue-700 transition mt-2">{authMode === 'login' ? 'Log In' : 'Sign Up'}</button>
             </form>
           </div>
@@ -253,8 +219,8 @@ function App() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
          <div className="text-center bg-white p-12 rounded-xl shadow-lg max-w-md w-full">
              <span className="text-6xl block mb-6 animate-pulse">✨</span>
-             <h2 className="text-2xl font-bold text-gray-800 mb-2">Creating your custom topic...</h2>
-             <p className="text-gray-500">The AI is currently writing the first batch of questions for <span className="font-bold text-blue-600">{selectedTopic.name}</span>. This takes a few seconds.</p>
+             <h2 className="text-2xl font-bold text-gray-800 mb-2">Generating Questions...</h2>
+             <p className="text-gray-500"> We are generating questions for <span className="font-bold text-blue-600">{selectedTopic.name}</span>.</p>
          </div>
       </div>
     );
@@ -262,12 +228,11 @@ function App() {
 
   if (!selectedTopic) {
     return (
-      <div className="min-h-screen bg-gray-50 p-8">
+      <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
         <div className="max-w-5xl mx-auto">
-          
-          <div className="flex justify-between items-center mb-12">
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-12">
             <div className="flex items-center gap-3">
-              <div className="bg-blue-600 p-2 rounded-full shadow-md"><svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg></div>
+              <div className="bg-blue-600 p-2 rounded-full shadow-md"><svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg></div>
               <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">Adaptive Prep</h1>
             </div>
             <div className="flex items-center gap-4">
@@ -278,44 +243,23 @@ function App() {
 
           <div className="bg-white p-6 rounded-xl shadow-sm mb-8 border border-gray-100">
              <h3 className="text-lg font-bold text-gray-800 mb-3">Study a New Topic</h3>
-             <div className="flex gap-3">
-                <input 
-                  value={newTopicInput} 
-                  onChange={(e) => setNewTopicInput(e.target.value)} 
-                  placeholder="e.g. World History, Python Functions, Cell Biology..." 
-                  className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <button 
-                  onClick={handleCreateTopic} 
-                  className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-6 rounded-lg transition shadow-sm"
-                >
-                  Generate Topic
-                </button>
+             <div className="flex flex-col sm:flex-row gap-3">
+                <input value={newTopicInput} onChange={(e) => setNewTopicInput(e.target.value)} placeholder="e.g. React Hooks, World History..." className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"/>
+                <button onClick={handleCreateTopic} className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-6 rounded-lg transition shadow-sm w-full sm:w-auto">Generate</button>
              </div>
           </div>
           
-          <h3 className="text-xl font-semibold text-gray-600 mb-4">Your Available Topics</h3>
+          <h3 className="text-xl font-semibold text-gray-600 mb-4">Your Topics</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {topics.map(topic => (
-              <div 
-                key={topic.id} 
-                onClick={() => startQuiz(topic)}
-                className="bg-white p-6 rounded-xl shadow-sm cursor-pointer hover:shadow-md hover:border-blue-500 border-2 border-transparent transition relative group"
-              >
+              <div key={topic.id} onClick={() => startQuiz(topic)} className="bg-white p-6 rounded-xl shadow-sm cursor-pointer hover:shadow-md hover:border-blue-500 border-2 border-transparent transition relative group">
                 <div className="flex justify-between items-start">
                   <h3 className="text-lg font-bold text-gray-800">{topic.name}</h3>
-                  <button 
-                    onClick={(e) => handleDeleteTopic(topic.id, e)}
-                    className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="Delete Topic"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                  </button>
+                  <button onClick={(e) => handleDeleteTopic(topic.id, e)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
                 </div>
                 <p className="text-sm text-gray-500 mt-2">Adaptive Learning Active</p>
               </div>
             ))}
-            {topics.length === 0 && <p className="text-gray-500 col-span-3 text-center py-8">No topics created yet. Generate one above!</p>}
           </div>
         </div>
       </div>
@@ -326,105 +270,60 @@ function App() {
     return (
       <div className="min-h-screen bg-gray-50 py-12 px-4">
         <div className="max-w-3xl mx-auto bg-white p-8 rounded-xl shadow-lg">
-          
           <div className="text-center mb-8">
             <h2 className="text-3xl font-bold text-gray-800 mb-2">Quiz Complete!</h2>
-            <p className="text-xl text-gray-600">You scored <span className="font-bold text-blue-600">{score}</span> out of {questions.length}</p>
+            <p className="text-xl text-gray-600">Score: <span className="font-bold text-blue-600">{score}</span> / {questions.length}</p>
           </div>
 
-          {/* AI Report Section */}
           {isAnalyzing ? (
-            <div className="flex flex-col items-center justify-center p-8 bg-blue-50 rounded-xl animate-pulse mb-8 border border-blue-100">
+            <div className="flex flex-col items-center p-8 bg-blue-50 rounded-xl animate-pulse mb-8 border border-blue-100">
               <span className="text-5xl mb-4">🧠</span>
-              <p className="text-blue-800 font-bold text-xl">AI is analyzing your performance...</p>
+              <p className="text-blue-800 font-bold">AI is analyzing performance...</p>
             </div>
-          ) : aiReport && !aiReport.error ? (
-            <div className="bg-linear-to-br from-indigo-50 to-blue-50 p-6 rounded-xl text-left shadow-sm border border-indigo-100 mb-8">
-               <h3 className="text-xl font-bold text-indigo-900 mb-4 flex items-center gap-2">
-                 <span className="text-2xl">📊</span> Your AI Tutor Report
-               </h3>
-               <div className="space-y-3 text-indigo-900 text-sm md:text-base">
-                 <p className="bg-white p-4 rounded shadow-sm border-l-4 border-blue-500"><strong>Analysis:</strong> {aiReport.analysis}</p>
-                 <p className="bg-white p-4 rounded shadow-sm border-l-4 border-red-400"><strong>Target Areas:</strong> {aiReport?.weak_points?.join(', ') || 'None identified'}</p>
-                 <p className="bg-white p-4 rounded shadow-sm border-l-4 border-green-500"><strong>Next Step:</strong> {aiReport.recommended_next_step}</p>
-                 <div className="bg-indigo-600 text-white p-4 rounded text-center font-bold mt-6 shadow-md">
-                   {aiReport.generated_new_questions
-                     ? `✅ Generated brand new Level ${aiReport.new_difficulty} questions based on your results!`
-                     : `✅ Difficulty maintained at Level ${aiReport.new_difficulty}.`}
+          ) : aiReport && (
+            <div className="bg-indigo-50 p-6 rounded-xl border border-indigo-100 mb-8">
+               <h3 className="text-xl font-bold text-indigo-900 mb-4 flex items-center gap-2">📊 AI Tutor Report</h3>
+               <div className="space-y-3 text-sm">
+                 <p className="bg-white p-4 rounded border-l-4 border-blue-500"><strong>Analysis:</strong> {aiReport.analysis}</p>
+                 <p className="bg-white p-4 rounded border-l-4 border-red-400"><strong>Weak Points:</strong> {aiReport?.weak_points?.join(', ') || 'None'}</p>
+                 <p className="bg-white p-4 rounded border-l-4 border-green-500"><strong>Recommendation:</strong> {aiReport.recommended_next_step}</p>
+                 <div className="bg-indigo-600 text-white p-4 rounded text-center font-bold mt-4 shadow-md">
+                   Difficulty: {aiReport.new_difficulty}
                  </div>
                </div>
             </div>
-          ) : null}
+          )}
 
-          {/* New Review Section */}
-          <div className="border-t border-gray-200 pt-8 mb-8">
-            <h3 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-              <span className="text-2xl">📝</span> Review Your Answers
-            </h3>
-            
+          <div className="border-t pt-8 mb-8">
+            <h3 className="text-2xl font-bold text-gray-800 mb-6">Review Answers</h3>
             <div className="space-y-6">
               {userAnswers.map((ans, idx) => (
-                <div key={idx} className={`p-5 rounded-lg border-l-4 shadow-sm ${ans.isCorrect ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}>
-                  <p className="font-bold text-gray-800 mb-3">{idx + 1}. {ans.question.question_text}</p>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
-                    <div className="bg-white p-3 rounded shadow-sm">
-                      <p className="text-sm text-gray-500 mb-1">Your Answer:</p>
-                      <p className={`font-medium ${ans.isCorrect ? 'text-green-700' : 'text-red-700'}`}>
-                        {ans.selected} {ans.isCorrect ? '✅' : '❌'}
-                      </p>
-                    </div>
-                    
-                    {!ans.isCorrect && (
-                      <div className="bg-white p-3 rounded shadow-sm">
-                        <p className="text-sm text-gray-500 mb-1">Correct Answer:</p>
-                        <p className="font-medium text-green-700">{ans.question.correct_answer} ✅</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* AI Explanation directly from the Database! */}
-                  {ans.question.explanation && (
-                    <div className="mt-4 p-4 bg-white rounded-lg text-gray-700 text-sm shadow-sm border border-gray-100">
-                      <strong className="text-blue-600">AI Explanation:</strong> {ans.question.explanation}
-                    </div>
-                  )}
+                <div key={idx} className={`p-5 rounded-lg border-l-4 ${ans.isCorrect ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}>
+                  <p className="font-bold text-gray-800 mb-2">{idx + 1}. {ans.question.question_text}</p>
+                  <p className={`text-sm font-medium ${ans.isCorrect ? 'text-green-700' : 'text-red-700'}`}>Your: {ans.selected}</p>
+                  {!ans.isCorrect && <p className="text-sm font-medium text-green-700">Correct: {ans.question.correct_answer}</p>}
+                  {ans.question.explanation && <p className="mt-3 text-xs italic text-gray-600">AI Note: {ans.question.explanation}</p>}
                 </div>
               ))}
             </div>
           </div>
-
-          <button onClick={resetDashboard} className="bg-blue-600 text-white font-bold px-8 py-4 rounded-lg hover:bg-blue-700 transition shadow-lg w-full text-lg">
-            {aiReport ? "Return to Dashboard" : "Back to Topics"}
-          </button>
+          <button onClick={resetDashboard} className="bg-blue-600 text-white font-bold py-4 rounded-lg hover:bg-blue-700 transition w-full shadow-lg">Back to Dashboard</button>
         </div>
       </div>
     );
   }
 
-  const currentQ = questions[currentQIndex];
-  
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-2xl">
-        <div className="flex justify-between items-center mb-6">
-          <span className="text-sm font-semibold text-blue-600 bg-blue-100 px-3 py-1 rounded-full">
-            Question {currentQIndex + 1} of {questions.length}
-          </span>
-          <span className="text-sm text-gray-500 font-medium">Level: {currentQ?.difficulty_level}</span>
+        <div className="flex justify-between mb-6">
+          <span className="text-xs font-bold text-blue-600 bg-blue-100 px-3 py-1 rounded-full uppercase tracking-wider">Question {currentQIndex + 1} / {questions.length}</span>
+          <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">Level {questions[currentQIndex]?.difficulty_level}</span>
         </div>
-        
-        <h2 className="text-xl font-bold text-gray-800 mb-8">{currentQ?.question_text}</h2>
-        
+        <h2 className="text-xl font-bold text-gray-800 mb-8">{questions[currentQIndex]?.question_text}</h2>
         <div className="flex flex-col gap-3">
-          {currentQ?.options && currentQ.options.map((option, idx) => (
-            <button
-              key={idx}
-              onClick={() => handleAnswer(option)}
-              className="text-left w-full p-4 border rounded-lg hover:bg-blue-50 hover:border-blue-500 transition text-gray-700 font-medium"
-            >
-              {option}
-            </button>
+          {questions[currentQIndex]?.options.map((option, idx) => (
+            <button key={idx} onClick={() => handleAnswer(option)} className="text-left w-full p-4 border rounded-lg hover:bg-blue-50 hover:border-blue-500 transition text-gray-700 font-medium">{option}</button>
           ))}
         </div>
       </div>

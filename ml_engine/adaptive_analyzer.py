@@ -6,7 +6,6 @@ import psycopg2
 import google.generativeai as genai
 from dotenv import load_dotenv
 
-# 🔥 BULLETPROOF WINDOWS FIX: Force the terminal to accept emojis/special characters
 if sys.stdout.encoding.lower() != 'utf-8':
     sys.stdout.reconfigure(encoding='utf-8')
 
@@ -120,5 +119,5 @@ def run_adaptive_loop(username):
     print("___JSON_END___")
 
 if __name__ == "__main__":
-    target_username = sys.argv[1] if len(sys.argv) > 1 else "hsbhu"
+    target_username = sys.argv[1] if len(sys.argv) > 1 else "test_user"
     run_adaptive_loop(target_username)

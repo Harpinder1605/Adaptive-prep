@@ -3,7 +3,7 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const { exec } = require('child_process');
 const path = require('path');
-const bcrypt = require('bcrypt'); // 🔐 Imported bcrypt for password hashing
+const bcrypt = require('bcrypt'); 
 require('dotenv').config();
 
 const app = express();
