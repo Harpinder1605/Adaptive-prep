@@ -127,7 +127,7 @@ function App() {
     }
   };
 
-  const fetchAiAnalysis = async () => {
+const fetchAiAnalysis = async () => {
     setIsAnalyzing(true);
     try {
       const res = await fetch(`${API_BASE}/analyze`, {
@@ -136,7 +136,19 @@ function App() {
         body: JSON.stringify({ username: user.username })
       });
       const data = await res.json();
-      setAiReport(data);
+      
+      // 🛡️ Catch backend errors safely
+      if (data.error) {
+        setAiReport({
+          analysis: "Backend analysis unavailable at the moment.",
+          weak_points: ["N/A"],
+          recommended_next_step: "Please review your answers and try again.",
+          new_difficulty: "Unchanged"
+        });
+      } else {
+        setAiReport(data);
+      }
+      
     } catch (err) {
       setAiReport({ error: true, analysis: "AI analysis unavailable." });
     }

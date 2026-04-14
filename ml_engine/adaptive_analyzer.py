@@ -52,7 +52,7 @@ def run_adaptive_loop(username):
     history_data = fetch_user_history(username)
     if not history_data: return
         
-    model = genai.GenerativeModel(get_valid_model())
+    model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = f"""
     You are an AI tutor. Student: {username}.
     Raw data (latest attempts first): {json.dumps(history_data, indent=2)}
